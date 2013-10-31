@@ -1175,10 +1175,31 @@ mono_arch_allocate_vars (MonoCompile *cfg)
 		ArgInfo *ainfo = &cinfo->args [i];
 		inst = cfg->args [i];
 		if (inst->opcode != OP_REGVAR) {
-			inst->opcode = OP_REGOFFSET;
-			inst->inst_basereg = X86_EBP;
+			switch (ainfo->storage) {
+			case ArgOnStack:
+				inst->opcode = OP_REGOFFSET;
+				inst->inst_basereg = X86_EBP;
+				inst->inst_offset = ainfo->offset + ARGS_OFFSET;
+				break;
+			case ArgInIReg:
+				inst->opcode = OP_REGVAR;
+				inst->dreg = ainfo->reg;
+				break;
+			case ArgValuetypeInReg:
+				ins->opcode = OP_REGOFFSET;
+				ins->inst_basereg = cfg->frame_reg;
+				/* FIXME: save argument to stack in prolog */
+				offset = ALIGN_TO (offset, 4);
+				if (cfg->arch.omit_fp) {
+					ins->inst_offset = offset;
+					offset += 4;
+				} else {
+					offset += 4;
+					ins->inst_offset = - offset;
+				}
+				break;
+			}
 		}
-		inst->inst_offset = ainfo->offset + ARGS_OFFSET;
 	}
 
 	cfg->stack_offset = offset;
