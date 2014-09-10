@@ -20,9 +20,13 @@
 #include <mono/metadata/threadpool.h>
 #include <mono/metadata/marshal.h>
 #include <mono/utils/atomic.h>
+#include <mono/utils/mono-threads.h>
 
 static gboolean shutting_down_inited = FALSE;
 static gboolean shutting_down = FALSE;
+
+static MonoNativeThreadId shutting_down_thread;
+static gboolean shutting_down_thread_set = FALSE;
 
 /** 
  * mono_runtime_set_shutting_down:
@@ -85,13 +89,21 @@ mono_runtime_fire_process_exit_event (void)
  * Try to initialize runtime shutdown.
  * After this call completes the thread pool will stop accepting new jobs and no further threads will be created.
  *
- * @return true if shutdown was initiated by this call or false is other thread beat this one
+ * @return true if shutdown was initiated by this thread or false if other thread beat this one
  */
 gboolean
 mono_runtime_try_shutdown (void)
 {
 	if (InterlockedCompareExchange (&shutting_down_inited, TRUE, FALSE))
+	{
+		if (InterlockedRead (&shutting_down_thread_set) &&
+		    mono_native_thread_id_equals (mono_native_thread_id_get (), shutting_down_thread))
+			/* Already successfully called by this thread */
+			return TRUE;
 		return FALSE;
+	}
+
+	shutting_down_thread = mono_native_thread_id_get ();
 
 	mono_runtime_fire_process_exit_event ();
 
@@ -111,6 +123,8 @@ mono_runtime_try_shutdown (void)
 
 	mono_runtime_quit ();
 	*/
+
+	InterlockedWrite (&shutting_down_thread_set, TRUE);
 
 	return TRUE;
 }
